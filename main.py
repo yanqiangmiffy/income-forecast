@@ -12,12 +12,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold,RepeatedStratifiedKFold
 from sklearn.metrics import roc_auc_score,accuracy_score
 from sklearn.svm import LinearSVC
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import GridSearchCV
 import lightgbm as lgb
@@ -46,6 +46,20 @@ def add_poly_features(data,column_names):
 def process_label(df):
     # 数据预处理 类别编码
     cate_cols=['workclass','education','marital-status','occupation','relationship','race','sex','native-country']
+
+    # "occupation", "native-country", "workclass"
+    for cate in ["occupation", "native-country", "workclass"]:
+        df[cate].replace("?",df['occupation'].mode()[0])
+
+    # df.replace(['Divorced', 'Married-AF-spouse',
+    #               'Married-civ-spouse', 'Married-spouse-absent',
+    #               'Never-married', 'Separated', 'Widowed'],
+    #              ['not married', 'married', 'married', 'married',
+    #               'not married', 'not married', 'not married'], inplace=True) # 降低
+
+    # df['race'] = df['race'].apply(lambda el: 1 if el.strip() == "White" else 0) # 降低
+
+    df['native-country'] = df['native-country'].apply(lambda el: 1 if el.strip() == "United-States" else 0)
     df = pd.get_dummies(df, columns=cate_cols)
     return df
 
@@ -59,7 +73,7 @@ def process_nums(df):
     df["log_capital-gain"] = np.log(df['capital-gain'] -df['capital-gain'] + 1)
     df["log_capital-loss"] = np.log(df['capital-loss'] -df['capital-loss'] + 1)
     df["log_hours-per-week"] = np.log(df['hours-per-week'] -df['hours-per-week'] + 1)
-    scaler=MinMaxScaler()
+    scaler=StandardScaler()
     df[num_cols] = scaler.fit_transform(df[num_cols].values)
 
     # df=add_poly_features(df,num_cols)
@@ -71,7 +85,6 @@ def create_feature(df):
     new_df=process_label(df)
     # 数据预处理 数值型数据
     new_df=process_nums(new_df)
-
     new_train,new_test=new_df[:train_len],new_df[train_len:]
     print(new_train.shape,new_test.shape)
     print(list(new_train.columns))
@@ -80,7 +93,7 @@ def create_feature(df):
 
 # 调整参数
 def tune_params(model,params,X,y):
-    gsearch = GridSearchCV(estimator=model,param_grid=params, scoring='roc_auc')
+    gsearch = GridSearchCV(estimator=model,param_grid=params, scoring='roc_auc',n_jobs=-1)
     gsearch.fit(X, y)
     # print(gsearch.cv_results_, gsearch.best_params_, gsearch.best_score_)
     print(gsearch.best_params_, gsearch.best_score_)
@@ -103,14 +116,6 @@ def plot_fea_importance(classifier,X_train):
 
 def evaluate_cv5_lgb(train_df, test_df, cols, test=False):
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
-    xgb = XGBClassifier()
-    params = {"learning_rate": [0.08, 0.1, 0.12],
-              "max_depth": [6, 7],
-              "subsample": [0.95, 0.98],
-              "colsample_bytree": [0.6, 0.7],
-              "min_child_weight": [3, 3.5, 3.8]
-              }
-    xgb = tune_params(xgb,params,train_df[cols],train_df.Y.values)
 
     y_test = 0
     oof_train = np.zeros((train_df.shape[0],))
@@ -126,9 +131,11 @@ def evaluate_cv5_lgb(train_df, test_df, cols, test=False):
                 eval_set=[(X_train, y_train), (X_val, y_val)],
                 early_stopping_rounds=100, eval_metric=['auc'], verbose=True)
         y_pred = xgb.predict(X_val)
+
         if test:
             y_test += xgb.predict(test_df.loc[:, cols])
         oof_train[val_index] = y_pred
+
         if i==0:
             plot_fea_importance(xgb,X_train)
     print(train_df.Y.values)
@@ -138,10 +145,11 @@ def evaluate_cv5_lgb(train_df, test_df, cols, test=False):
     return y_test
 
 
-train,test=create_feature(df)
-cols = [col for col in train.columns if col not in ['id','Y','native-country']]
-y_test=evaluate_cv5_lgb(train,test,cols,True)
-test['Y']=y_test
-test['Y']=test['Y'].apply(lambda x:1 if x>0.5 else 0)
-test['Y']=y_encoder.inverse_transform(test['Y'].values)
-test[['id','Y']].to_csv('result/01_lgb_cv5.csv',columns=None, header=False, index=False)
+if __name__ == '__main__':
+    train,test=create_feature(df)
+    cols = [col for col in train.columns if col not in ['id','Y']]
+    y_test=evaluate_cv5_lgb(train,test,cols,True)
+    test['Y']=y_test
+    test['Y']=test['Y'].apply(lambda x:1 if x>0.5 else 0)
+    test['Y']=y_encoder.inverse_transform(test['Y'].values)
+    test[['id','Y']].to_csv('result/01_lgb_cv5.csv',columns=None, header=False, index=False)

@@ -17,6 +17,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import roc_auc_score
@@ -39,6 +40,7 @@ def get_models():
     ab = AdaBoostClassifier()
     gb = GradientBoostingClassifier()
     rf = RandomForestClassifier()
+    dc=DecisionTreeClassifier()
     xgb = XGBClassifier()
     lgb = LGBMClassifier()
     models = {
@@ -51,6 +53,7 @@ def get_models():
         'ada boost':ab,
         'random forest': rf,
         'gradient boost': gb,
+        'dc':dc,
         'xgb':xgb,
         'lgb':lgb
     }
